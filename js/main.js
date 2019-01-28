@@ -476,33 +476,27 @@ function tff_numbers(loc, callback){
 	});
 }
 
-var lyft_token = false;
-var lyft_eta_data = false;
-var lyft_cost_data = false;
-
-function process_lyft(call_data){
-	if (lyft_eta_data && lyft_cost_data){
-		var etas = {};
-		for (var i=0;i<lyft_eta_data.eta_estimates.length;i++){
-			var eta = lyft_eta_data.eta_estimates[i];
-			etas[eta.ride_type] = eta.eta_seconds;
-		}
+function service_lyft(call_num, start, stop){
+	var call_data = {start_lat: start.lat, start_lng: start.lng, end_lat: stop.lat, end_lng: stop.lng, lat: start.lat, lng: start.lng};
+	$.getJSON(base_url+"/ajax/lyft.php", call_data, function (data){
+		if (results_call > call_num)
+			return;
 		var results = [];
+
 		var options = get_ride_filters();
-		for (var i=0;i<lyft_cost_data.cost_estimates.length;i++){
-			var est = lyft_cost_data.cost_estimates[i];
+		for (var i=0;i<data.length;i++){
+			var est = data[i];
 
 			if (options !== true && options.indexOf(est.ride_type) == -1){
 				continue;
 			}
+			console.log(est);
 
 			var surge_multi = est.primetime_percentage.substr(0, est.primetime_percentage.length-1)/100 + 1;
-			var obj = {app: "lyft", icon: '<img src="images/lyft_'+est.display_name.toLowerCase().replace(/ /g, "_")+'.svg" onError="this.onerror=null;this.src='+"'images/lyft_logo.svg'"+';">', name: est.display_name, time_sec: etas[est.ride_type]?etas[est.ride_type]:"N/A", price_multiply: surge_multi, ride_type:get_ride_type(est.ride_type)};
-			if (etas[est.ride_type]){
-				var arrival = new Date();
-				arrival.setSeconds(arrival.getSeconds()+etas[est.ride_type]+est.estimated_duration_seconds);
-				obj.arr_time = arrival;
-			}
+			var obj = {app: "lyft", icon: '<img src="images/lyft_'+est.display_name.toLowerCase().replace(/ /g, "_")+'.svg" onError="this.onerror=null;this.src='+"'images/lyft_logo.svg'"+';">', name: est.display_name, time_sec: est.eta_seconds?est.eta_seconds:"N/A", price_multiply: surge_multi, ride_type:get_ride_type(est.ride_type)};
+			var arrival = new Date();
+			arrival.setSeconds(arrival.getSeconds()+est.eta_seconds+est.estimated_duration_seconds);
+			obj.arr_time = arrival;
 			if (surge_multi > 1)
 				obj.show_surge = true;
 			if (est.estimated_cost_cents_max > 0){
@@ -519,53 +513,11 @@ function process_lyft(call_data){
 			obj.dlink = "lyft://ridetype?id="+est.ride_type+"&pickup[latitude]="+call_data.start_lat+"&pickup[longitude]="+call_data.start_lng+"&destination[latitude]="+call_data.end_lat+"&destination[longitude]="+call_data.end_lng;
 			results.push(obj);
 		}
+		console.log(results);
 		returned_results(results, "Lyft");
-	}
-}
-
-function service_lyft(call_num, start, stop){
-	if (lyft_token){
-		lyft_cost_data = false;
-		lyft_eta_data = false;
-		var  call_data = {start_lat: start.lat, start_lng: start.lng, end_lat: stop.lat, end_lng: stop.lng};
-		$.ajax({
-			url: "https://api.lyft.com/v1/cost",
-			data: call_data,
-			beforeSend: function (xhr) {
-				xhr.setRequestHeader ("Authorization", "bearer "+lyft_token);
-			}, success: function (data){
-				if (results_call > call_num)
-					return;
-				lyft_cost_data = data;
-				process_lyft(call_data);
-			}
-		});
-		$.ajax({
-			url: "https://api.lyft.com/v1/eta",
-			data: {lat: start.lat, lng: start.lng},
-			beforeSend: function (xhr) {
-				xhr.setRequestHeader ("Authorization", "bearer "+lyft_token);
-			}, success: function (data){
-				if (results_call > call_num)
-					return;
-				lyft_eta_data = data;
-				process_lyft(call_data);
-			}
-		});
-	} else {
-		$.ajax({
-			url: "https://api.lyft.com/oauth/token",
-			method: "POST",
-			headers: {"Content-Type": "application/json"},
-			data: '{"grant_type": "client_credentials", "scope": "public"}',
-			beforeSend: function (xhr) {
-				xhr.setRequestHeader ("Authorization", "Basic " + btoa(credentials["lyft"]));
-			}, success: function (data){
-				lyft_token = data.access_token;
-				service_lyft(call_num, start, stop);
-			}
-		});
-	}
+	});
+	
+	return;
 }
 
 function returned_results(results, over_name){
@@ -714,10 +666,11 @@ function coded_location(pos, start, trigger){
 				draggable: true,
 				zIndex: 100,
 				icon: {
-					url:"images/icons3/CUSTOM%20DESTINATION%20ICON.WB.v21.svg",
-					size: new google.maps.Size(10, 10),
+					url:"images/destination.png",
+					size: new google.maps.Size(30, 30),
 					origin: new google.maps.Point(0, 0),
-					anchor: new google.maps.Point(5, 5)
+					anchor: new google.maps.Point(15, 15),
+					scaledSize: new google.maps.Size(30, 30)
 				}
 			});
 			markers.start.addListener("dragend", function (event){
@@ -750,10 +703,11 @@ function coded_location(pos, start, trigger){
 				draggable:true,
 				zIndex: 120,
 				icon: {
-					url: "images/icons3/CUSTOM%20ORIGIN%20ICON.BW.v9.svg",
-					size: new google.maps.Size(10, 10),
+					url: "images/origin.png",
+					size: new google.maps.Size(30, 30),
 					origin: new google.maps.Point(0, 0),
-					anchor: new google.maps.Point(5, 5)
+					anchor: new google.maps.Point(15, 15),
+					scaledSize: new google.maps.Size(30, 30)
 				}
 			});
 			markers.stop.addListener("dragend", function(event){
@@ -1083,11 +1037,11 @@ function get_geo_location(do_load){
 				map: map,
 				zIndex: 30,
 				icon: {
-					url: "images/location.svg",
-					size: new google.maps.Size(3000, 3000),
+					url: "images/location.png",
+					size: new google.maps.Size(30, 30),
 					origin: new google.maps.Point(0, 0),
-					anchor: new google.maps.Point(25, 25),
-					scaledSize: new google.maps.Size(50, 50)
+					anchor: new google.maps.Point(15, 15),
+					scaledSize: new google.maps.Size(30, 30)
 				}
 			});
 			markers.my_loc = marker;
@@ -1122,11 +1076,11 @@ function get_geo_location_geo(do_load){
 						map: map,
 						zIndex: 30,
 						icon: {
-							url: "images/location.svg",
-							size: new google.maps.Size(3000, 3000),
+							url: "images/location.png",
+							size: new google.maps.Size(30, 30),
 							origin: new google.maps.Point(0, 0),
-							anchor: new google.maps.Point(25, 25),
-							scaledSize: new google.maps.Size(50, 50)
+							anchor: new google.maps.Point(15, 15),
+							scaledSize: new google.maps.Size(30, 30)
 						}
 					});
 					markers.my_loc = marker;
@@ -1587,7 +1541,7 @@ function startup(){
 
 	function confirm_link(result, value_message){
 		$("#value_screen").fadeOut();
-		$('#monkey_car').attr('src', '');
+		$('#monkey_gif').attr('src', '');
 		if (settings.get("show_external_conf")){
 			var name = result.find(".name").html();
 			var add = "";
@@ -1610,8 +1564,10 @@ function startup(){
 
 	var confirm_handle, confirm_result, value_message;
 	click_event(".confirm_link", function (e){
+		$('.value_dyn').html('');
+		$('#value_prop').html('');
 		confirm_result = $(e.currentTarget);
-		$('#monkey_car').attr('src', 'images/mooky_drift.gif');
+		$('#monkey_car').show();
 
 		value_message = "";
 		var value_item = "", similar = $(".type_"+confirm_result.data("ride_type"));
@@ -1649,18 +1605,24 @@ function startup(){
 			}
 		}
 
-		if (value_item){
-			$(".value_dyn").show();
-			$("#value_prop").html(value_item);
-		} else {
-			$(".value_dyn").hide();
-			$("#value_prop").html("Thank you<br />for<br />using Mooky");
-		}
+		
 		$("#value_screen").show();
+		setTimeout(function (){
+			if (value_item){
+				$(".value_dyn").show();
+				$("#value_prop").html(value_item);
+			} else {
+				$(".value_dyn").hide();
+				$("#value_prop").html("Thank you<br />for<br />using Mooky");
+			}
+			$('#monkey_gif').attr('src', 'images/mooky_drift_2x.gif');
+			$('#monkey_car').hide();
+			$('#monkey_gif').show();
+		}, 3500);
 
 		confirm_handle = setTimeout(function (){
 			confirm_link(confirm_result, value_message);
-		}, 3500);
+		}, 16000);
 	}, true);
 
 	click_event("#value_screen_close", function (e){
@@ -2234,8 +2196,8 @@ function Rolidex(){
 	this.pre_pos = 0;
 	this.pos = 0;
 	this.last_pos = 0;
-	this.height = 30;
-	this.height_div = 25;
+	this.height = 35;
+	this.height_div = 30;
 	this.range = 30;
 	this.range_size = 3 * this.height;
 	this.touch_start = false;
@@ -2267,6 +2229,8 @@ function Rolidex(){
 		this.main_div.css("height", total_height);
 		var cont_height = this.main_div.height();
 		var scroll_height = total_height - cont_height - 5;
+		var max_height = cont_height - this.height + 5;
+		var c_r_h = cont_height - this.range - this.height;
 
 		var full_height = scroll_height < 0;
 
@@ -2288,13 +2252,18 @@ function Rolidex(){
 			if (parent.hasClass("sub_results"))
 				mod_top = parent.parent().css("top").slice(0, -2);
 			var npos = curr_pos;
+			var mod = 0;
 			if (npos < scope.range && z != 10){
+				mod = Math.tanh(-(npos - scope.range)/scope.range_size/0.7);
 				npos = (1-Math.tanh(-(npos - scope.range)/scope.range_size/0.7)* 1.1) * scope.range;
 			}
-			if (npos < 0)
+			if (npos < 0){
+				mod = 1;
 				npos = 0;
-			if (npos > cont_height - scope.range - scope.height && a != items.length){
-				npos = cont_height - (scope.range - Math.tanh((npos - (cont_height - scope.range - scope.height))/scope.range_size/0.7)* 1.1 * scope.range) - scope.height;
+			}
+			if (npos > c_r_h && a != items.length){
+				mod = Math.tanh((npos - c_r_h)/scope.range_size/0.7);
+				npos = cont_height - (scope.range - Math.tanh((npos - c_r_h)/scope.range_size/0.7)* 1.1 * scope.range) - scope.height;
 				if (prev_group_z != false){
 					z = prev_group_z;
 					prev_group_z = false;
@@ -2303,21 +2272,24 @@ function Rolidex(){
 			} else {
 				z++;
 			}
-			if (npos > cont_height - scope.height)
-				npos = cont_height - scope.height;
+			if (npos > max_height){
+				mod = 1;
+				npos = max_height;
+			}
 			a++;
-			//console.log(npos, mod_top);
+			mod = 1-mod/20;
+			//console.log(npos, mod_top, mod);
 			if (mod_top == -1){
 				if (parent.hasClass("para_scroll")){
 					z -= 2;
-					$(this).css({top: npos, "z-index":z});
+					$(this).css({top: npos, "z-index":z, transform: "scale("+mod+")"});
 				} else {
 					prev_group_z = z;
 					parent.css({top: npos, "z-index":z});
-					parent.children(".result").css({"z-index":z});
+					parent.children(".result").css({"z-index":z}).first().css({transform: "scale("+mod+")"});
 				}
 			} else {
-				$(this).css({top: npos - mod_top, "z-index":z});
+				$(this).css({top: npos - mod_top, "z-index":z, transform: "scale("+mod+")"});
 			}
 			curr_pos += scope.height;
 		});
@@ -2330,8 +2302,8 @@ function Rolidex2(){
 	this.pre_pos = 0;
 	this.pos = 0;
 	this.last_pos = 0;
-	this.height = 30;
-	this.height_div = 25;
+	this.height = 35;
+	this.height_div = 30;
 	this.range = 30;
 	this.range_size = 2 * this.height;
 	this.touch_start = false;
@@ -2365,13 +2337,15 @@ function Rolidex2(){
 		var total_height = items.length * this.height;
 		this.main_div.css("height", total_height);
 		var cont_height = this.main_div.height();
-		var scroll_height = total_height - cont_height;
+		var scroll_height = total_height - cont_height - 5;
+		var max_height = cont_height - this.height + 5;
+		var c_r_h = cont_height - this.range - this.height;
 
 		var full_height = scroll_height < 0;
 
 		var prev_group_z = false;
 
-		//console.log(this.last_pos, this.pos, cont_height, items.length, scroll_height);
+		//console.log(this.pos, cont_height, items.length, scroll_height);
 
 		if (this.pos > scroll_height)
 			this.pos = scroll_height;
@@ -2387,39 +2361,45 @@ function Rolidex2(){
 			if (parent.hasClass("options"))
 				mod_top = parent.parent().css("top").slice(0, -2);
 			var npos = curr_pos;
+			var mod = 0;
 			if (npos < scope.range && z != 10){
+				mod = Math.tanh(-(npos - scope.range)/scope.range_size/0.7);
 				npos = (1-Math.tanh(-(npos - scope.range)/scope.range_size/0.7)* 1.1) * scope.range;
 			}
-			if (npos < 0)
+			if (npos < 0){
+				mod = 1;
 				npos = 0;
-			if (npos > cont_height - scope.range - scope.height && a != items.length){
-				npos = cont_height - (scope.range - Math.tanh((npos - (cont_height - scope.range - scope.height))/scope.range_size/0.7)* 1.1 * scope.range) - scope.height;
+			}
+			if (npos > c_r_h && a != items.length){
+				mod = Math.tanh((npos - c_r_h)/scope.range_size/0.7);
+				npos = cont_height - (scope.range - Math.tanh((npos - c_r_h)/scope.range_size/0.7)* 1.1 * scope.range) - scope.height;
 				if (prev_group_z != false){
 					z = prev_group_z;
 					prev_group_z = false;
 				}
 				z--;
-			} else if (a != items.length){
-				z++;
 			} else {
-				z--;
+				z++;
 			}
-			if (npos > cont_height - scope.height)
-				npos = cont_height - scope.height;
+			if (npos > max_height){
+				z-=2;
+				mod = 1;
+				npos = max_height;
+			}
 			a++;
-			//console.log(npos, z, mod_top);
+			mod = 1-mod/20;
+			//console.log(npos, mod_top, mod);
 			if (mod_top == -1){
-				if (parent.hasClass("para_scroll")){
-					z -= 2;
-					$(this).css({top: npos, "z-index":z});
+				if (parent.hasClass("settings_container")){
+					//z -= 4;
+					$(this).css({top: npos, "z-index":z, transform: "scale("+mod+")"});
 				} else {
 					prev_group_z = z;
-					$(this).css({"z-index":z});
 					parent.css({top: npos, "z-index":z});
-					parent.children(".option").css({"z-index":z});
+					parent.children(".option").css({"z-index":z}).first().css({transform: "scale("+mod+")"});
 				}
 			} else {
-				$(this).css({top: npos - mod_top, "z-index":z});
+				$(this).css({top: npos - mod_top, "z-index":z, transform: "scale("+mod+")"});
 			}
 			curr_pos += scope.height;
 		});
