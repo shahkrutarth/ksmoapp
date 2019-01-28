@@ -1622,7 +1622,7 @@ function startup(){
 
 		confirm_handle = setTimeout(function (){
 			confirm_link(confirm_result, value_message);
-		}, 16000);
+		}, 9300);
 	}, true);
 
 	click_event("#value_screen_close", function (e){
